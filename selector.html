@@ -55,21 +55,21 @@
         <h2>Nepal Administrative Areas Map</h2>
         <div class="search-container">
             <div class="select-wrapper">
-                <label for="districtSelect">District:</label>
+                <label for="districtSelect">Province:</label>
                 <select id="districtSelect">
+                    <option value="">Select a province...</option>
+                </select>
+            </div>
+            <div class="select-wrapper">
+                <label for="municipalitySelect">District:</label>
+                <select id="municipalitySelect" disabled>
                     <option value="">Select a district...</option>
                 </select>
             </div>
             <div class="select-wrapper">
-                <label for="municipalitySelect">Municipality/VDC:</label>
-                <select id="municipalitySelect" disabled>
-                    <option value="">Select a municipality...</option>
-                </select>
-            </div>
-            <div class="select-wrapper">
-                <label for="wardSelect">Ward:</label>
+                <label for="wardSelect">Municipality/Rural Municipality:</label>
                 <select id="wardSelect" disabled>
-                    <option value="">Select a ward...</option>
+                    <option value="">Select a municipality...</option>
                 </select>
             </div>
         </div>
@@ -115,7 +115,7 @@
                 processDistrictsData(data);
                 populateDistrictsDropdown();
             } catch (error) {
-                console.error('Error fetching districts:', error);
+                console.error('Error fetching provinces:', error);
             } finally {
                 document.getElementById('loading').style.display = 'none';
             }
@@ -144,7 +144,7 @@
                 processMunicipalitiesData(data);
                 populateMunicipalitiesDropdown();
             } catch (error) {
-                console.error('Error fetching municipalities:', error);
+                console.error('Error fetching districts:', error);
             } finally {
                 document.getElementById('loading').style.display = 'none';
             }
@@ -173,7 +173,7 @@
                 processWardsData(data);
                 populateWardsDropdown();
             } catch (error) {
-                console.error('Error fetching wards:', error);
+                console.error('Error fetching municipalities:', error);
             } finally {
                 document.getElementById('loading').style.display = 'none';
             }
@@ -243,7 +243,6 @@
                     name: ward.tags.name,
                     nameEn: ward.tags['name:en'],
                     nameNe: ward.tags['name:ne'],
-                    wardNum: ward.tags['ref'] || ward.tags['ward'],
                     population: ward.tags.population,
                     geometry: ways.map(way =>
                         way.nodes.map(nodeId => {
@@ -257,7 +256,7 @@
 
         function populateDistrictsDropdown() {
             const select = document.getElementById('districtSelect');
-            select.innerHTML = '<option value="">Select a district...</option>';
+            select.innerHTML = '<option value="">Select a province...</option>';
 
             districtsData.sort((a, b) => (a.nameEn || a.name).localeCompare(b.nameEn || b.name));
 
@@ -271,7 +270,7 @@
 
         function populateMunicipalitiesDropdown() {
             const select = document.getElementById('municipalitySelect');
-            select.innerHTML = '<option value="">Select a municipality...</option>';
+            select.innerHTML = '<option value="">Select a district...</option>';
 
             municipalitiesData.sort((a, b) => (a.nameEn || a.name).localeCompare(b.nameEn || b.name));
 
@@ -284,23 +283,19 @@
 
             select.disabled = false;
             document.getElementById('wardSelect').disabled = true;
-            document.getElementById('wardSelect').innerHTML = '<option value="">Select a ward...</option>';
+            document.getElementById('wardSelect').innerHTML = '<option value="">Select a municipality...</option>';
         }
 
         function populateWardsDropdown() {
             const select = document.getElementById('wardSelect');
-            select.innerHTML = '<option value="">Select a ward...</option>';
+            select.innerHTML = '<option value="">Select a municipality...</option>';
 
-            wardsData.sort((a, b) => {
-                const numA = parseInt(a.wardNum) || 0;
-                const numB = parseInt(b.wardNum) || 0;
-                return numA - numB;
-            });
+            wardsData.sort((a, b) => (a.nameEn || a.name).localeCompare(b.nameEn || b.name));
 
             wardsData.forEach(ward => {
                 const option = document.createElement('option');
                 option.value = ward.id;
-                option.textContent = `Ward ${ward.wardNum || 'N/A'} - ${ward.nameEn || ward.name}`;
+                option.textContent = ward.nameEn || ward.name;
                 select.appendChild(option);
             });
 
@@ -320,7 +315,6 @@
             const info = `
                 <h3>${data.nameEn || data.name}</h3>
                 <p><strong>Nepali Name:</strong> ${data.nameNe || 'Not available'}</p>
-                ${type === 'ward' ? `<p><strong>Ward Number:</strong> ${data.wardNum || 'N/A'}</p>` : ''}
                 <p><strong>Population:</strong> ${data.population ? parseInt(data.population).toLocaleString() : 'Not available'}</p>
                 ${data.website ? `<p><strong>Website:</strong> <a href="${data.website}" target="_blank">${data.website}</a></p>` : ''}
                 ${data.wikidata ? `<p><strong>Wikidata:</strong> <a href="https://www.wikidata.org/wiki/${data.wikidata}" target="_blank">${data.wikidata}</a></p>` : ''}
@@ -359,8 +353,8 @@
             } else {
                 document.getElementById('municipalitySelect').disabled = true;
                 document.getElementById('wardSelect').disabled = true;
-                document.getElementById('municipalitySelect').innerHTML = '<option value="">Select a municipality...</option>';
-                document.getElementById('wardSelect').innerHTML = '<option value="">Select a ward...</option>';
+                document.getElementById('municipalitySelect').innerHTML = '<option value="">Select a district...</option>';
+                document.getElementById('wardSelect').innerHTML = '<option value="">Select a municipality...</option>';
                 displayArea(null);
             }
         });
@@ -376,7 +370,7 @@
                 const district = districtsData.find(d => d.id === parseInt(districtId));
                 displayArea(district, 'district');
                 document.getElementById('wardSelect').disabled = true;
-                document.getElementById('wardSelect').innerHTML = '<option value="">Select a ward...</option>';
+                document.getElementById('wardSelect').innerHTML = '<option value="">Select a municipality...</option>';
             }
         });
 
