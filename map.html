@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaflet Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+    <script>
+        // Initialize the map with a unique variable name
+        const myMap = L.map('map').setView([0, 0], 2);
+
+        // Add tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+        }).addTo(myMap);
+
+        // Initialize FeatureGroup to store editable layers
+        const drawnItems = new L.FeatureGroup();
+        myMap.addLayer(drawnItems);
+
+        // Add Leaflet Draw controls
+        const drawControl = new L.Control.Draw({
+            edit: {
+                featureGroup: drawnItems,
+            },
+            draw: {
+                polyline: false,
+                rectangle: false,
+                circle: false,
+                marker: false,
+                circlemarker: false,
+                polygon: {
+                    allowIntersection: false,
+                    showArea: true,
+                    shapeOptions: {
+                        color: 'blue',
+                    },
+                },
+            },
+        });
+        myMap.addControl(drawControl);
+
+        // Handle drawing events
+        myMap.on(L.Draw.Event.CREATED, function (event) {
+            const layer = event.layer;
+            drawnItems.addLayer(layer);
+
+            // Extract polygon coordinates
+            if (event.layerType === 'polygon') {
+                const latLngs = layer.getLatLngs()[0]; // Get coordinates of the polygon
+                const polygonCoordinates = latLngs.map(latLng => [latLng.lat, latLng.lng]);
+
+                // Log polygon coordinates
+                console.log('Polygon Coordinates:', polygonCoordinates);
+
+                // Example AJAX POST to backend
+                fetch('/api/points/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ polygon: { coordinates: polygonCoordinates } }),
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('Points inside polygon:', data);
+                    })
+                    .catch(error => console.error('Error:', error));
+            }
+        });
+    </script>
+
+</head>
+<body>
+    <div id="map" style="height: 600px; width: 100%;"></div>
+    <script>
+        const map = L.map('map').setView([0, 0], 2);
+
+        // Add tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+        }).addTo(map);
+
+        // Fetch predefined points
+        fetch('/api/points/')
+            .then(response => response.json())
+            .then(points => {
+                points.forEach(point => {
+                    L.marker([point.latitude, point.longitude])
+                        .bindPopup(point.name)
+                        .addTo(map);
+                });
+            });
+
+        // Polygon drawing
+        let drawnPolygon;
+        map.on('click', function (e) {
+            if (!drawnPolygon) {
+                drawnPolygon = L.polygon([[e.latlng.lat, e.latlng.lng]], { color: 'red' }).addTo(map);
+            } else {
+                drawnPolygon.addLatLng([e.latlng.lat, e.latlng.lng]);
+            }
+        });
+
+        // Submit polygon
+        const submitPolygon = () => {
+            const polygonData = drawnPolygon.getLatLngs()[0].map(latlng => [latlng.lat, latlng.lng]);
+            $.ajax({
+                url: '/api/points/',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ polygon: { coordinates: polygonData } }),
+                success: function (data) {
+                    console.log('Points inside polygon:', data);
+                },
+                error: function (err) {
+                    console.error('Error:', err);
+                },
+            });
+        };
+
+        // Example button for submitting the polygon
+        const button = L.DomUtil.create('button', 'leaflet-bar');
+        button.textContent = 'Submit Polygon';
+        button.style.position = 'absolute';
+        button.style.top = '10px';
+        button.style.left = '10px';
+        button.onclick = submitPolygon;
+        document.body.appendChild(button);
+    </script>
+</body>
+</html>
