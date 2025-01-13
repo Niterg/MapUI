@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Nepal Administrative Areas Map - Node Outline</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+        <style>
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+
+        .search-container {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .select-wrapper {
+            flex: 1;
+            min-width: 250px;
+        }
+
+        select {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+
+        #map {
+            height: 500px;
+            width: 100%;
+            border: 1px solid #ddd;
+            margin-bottom: 20px;
+        }
+
+        #areaInfo {
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+
+        .loading {
+            color: #666;
+            font-style: italic;
+        }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h2>Nepal Administrative Areas Map - Node Outline</h2>
+            <div class="search-container">
+                <div class="select-wrapper">
+                    <label for="districtSelect">Province:</label>
+                    <select id="districtSelect">
+                        <option value="">Select a province...</option>
+                    </select>
+                </div>
+                <div class="select-wrapper">
+                    <label for="municipalitySelect">District:</label>
+                    <select id="municipalitySelect" disabled>
+                        <option value="">Select a district...</option>
+                    </select>
+                </div>
+                <div class="select-wrapper">
+                    <label for="wardSelect">Municipality/Rural Municipality:</label>
+                    <select id="wardSelect" disabled>
+                        <option value="">Select a municipality...</option>
+                    </select>
+                </div>
+            </div>
+            <div id="loading" class="loading" style="display: none;">Loading data...</div>
+            <div id="map"></div>
+            <div id="areaInfo"></div>
+        </div>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+        <script>
+        let districtsData = [];
+        let municipalitiesData = [];
+        let wardsData = [];
+        let map;
+        let currentLayer = null;  // To store the currently displayed boundary layer
+
+        function initMap() {
+            map = L.map('map').setView([28.3949, 84.1240], 7);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+        }
+
+        async function fetchDistrictsData() {
+            const query = `
+                [out:json][timeout:25];
+                area["ISO3166-1"="NP"][admin_level=2]->.nepal;
+                (
+                    relation["admin_level"="4"]["boundary"="administrative"](area.nepal);
+                    >;
+                );
+                out body geom;
+            `;
+
+            try {
+                document.getElementById('loading').style.display = 'block';
+                const response = await fetch('https://overpass-api.de/api/interpreter', {
+                    method: 'POST',
+                    body: query
+                });
+
+                const data = await response.json();
+                processDistrictsData(data);
+                populateDistrictsDropdown();
+            } catch (error) {
+                console.error('Error fetching provinces:', error);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        async function fetchMunicipalitiesData(districtId) {
+            const query = `
+                [out:json][timeout:25];
+                rel(${districtId});
+                map_to_area;
+                (
+                    relation["admin_level"="6"]["boundary"="administrative"](area);
+                    >;
+                );
+                out body geom;
+            `;
+
+            try {
+                document.getElementById('loading').style.display = 'block';
+                const response = await fetch('https://overpass-api.de/api/interpreter', {
+                    method: 'POST',
+                    body: query
+                });
+
+                const data = await response.json();
+                processMunicipalitiesData(data);
+                populateMunicipalitiesDropdown();
+            } catch (error) {
+                console.error('Error fetching districts:', error);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        async function fetchWardsData(municipalityId) {
+            const query = ` 
+                [out:json][timeout:25];
+                rel(${municipalityId});
+                map_to_area;
+                (
+                    relation["admin_level"="7"]["boundary"="administrative"](area);
+                    >;
+                );
+                out body geom;
+            `;
+
+            try {
+                document.getElementById('loading').style.display = 'block';
+                const response = await fetch('https://overpass-api.de/api/interpreter', {
+                    method: 'POST',
+                    body: query
+                });
+
+                const data = await response.json();
+                processWardsData(data);
+                populateWardsDropdown();
+            } catch (error) {
+                console.error('Error fetching municipalities:', error);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        function processDistrictsData(data) {
+            districtsData = data.elements.filter(el => el.type === 'relation').map(district => {
+                const members = district.members.filter(member => member.type === 'way');
+                const ways = data.elements.filter(el =>
+                    el.type === 'way' &&
+                    members.some(member => member.ref === el.id)
+                );
+
+                return {
+                    id: district.id,
+                    name: district.tags.name,
+                    nameEn: district.tags['name:en'],
+                    nameNe: district.tags['name:ne'],
+                    population: district.tags.population,
+                    website: district.tags.website,
+                    wikidata: district.tags.wikidata,
+                    geometry: ways.map(way =>
+                        way.nodes.map(nodeId => {
+                            const node = data.elements.find(el => el.type === 'node' && el.id === nodeId);
+                            return [node.lat, node.lon];
+                        })
+                    )
+                };
+            });
+        }
+
+        function processMunicipalitiesData(data) {
+            municipalitiesData = data.elements.filter(el => el.type === 'relation').map(municipality => {
+                const members = municipality.members.filter(member => member.type === 'way');
+                const ways = data.elements.filter(el =>
+                    el.type === 'way' &&
+                    members.some(member => member.ref === el.id)
+                );
+
+                return {
+                    id: municipality.id,
+                    name: municipality.tags.name,
+                    nameEn: municipality.tags['name:en'],
+                    nameNe: municipality.tags['name:ne'],
+                    population: municipality.tags.population,
+                    type: municipality.tags['admin_level:6:type'],
+                    geometry: ways.map(way =>
+                        way.nodes.map(nodeId => {
+                            const node = data.elements.find(el => el.type === 'node' && el.id === nodeId);
+                            return [node.lat, node.lon];
+                        })
+                    )
+                };
+            });
+        }
+
+        function processWardsData(data) {
+            wardsData = data.elements.filter(el => el.type === 'relation').map(ward => {
+                const members = ward.members.filter(member => member.type === 'way');
+                const ways = data.elements.filter(el =>
+                    el.type === 'way' &&
+                    members.some(member => member.ref === el.id)
+                );
+
+                return {
+                    id: ward.id,
+                    name: ward.tags.name,
+                    nameEn: ward.tags['name:en'],
+                    nameNe: ward.tags['name:ne'],
+                    population: ward.tags.population,
+                    geometry: ways.map(way =>
+                        way.nodes.map(nodeId => {
+                            const node = data.elements.find(el => el.type === 'node' && el.id === nodeId);
+                            return [node.lat, node.lon];
+                        })
+                    )
+                };
+            });
+        }
+
+        function populateDistrictsDropdown() {
+            const select = document.getElementById('districtSelect');
+            select.innerHTML = '<option value="">Select a province...</option>';
+
+            districtsData.sort((a, b) => (a.nameEn || a.name).localeCompare(b.nameEn || b.name));
+
+            districtsData.forEach(district => {
+                const option = document.createElement('option');
+                option.value = district.id;
+                option.textContent = district.nameEn || district.name;
+                select.appendChild(option);
+            });
+        }
+
+        function populateMunicipalitiesDropdown() {
+            const select = document.getElementById('municipalitySelect');
+            select.innerHTML = '<option value="">Select a district...</option>';
+
+            municipalitiesData.sort((a, b) => (a.nameEn || a.name).localeCompare(b.nameEn || b.name));
+
+            municipalitiesData.forEach(municipality => {
+                const option = document.createElement('option');
+                option.value = municipality.id;
+                option.textContent = municipality.nameEn || municipality.name;
+                select.appendChild(option);
+            });
+
+            select.disabled = false;
+            document.getElementById('wardSelect').disabled = true;
+            document.getElementById('wardSelect').innerHTML = '<option value="">Select a municipality...</option>';
+        }
+
+        function populateWardsDropdown() {
+            const select = document.getElementById('wardSelect');
+            select.innerHTML = '<option value="">Select a municipality...</option>';
+
+            wardsData.sort((a, b) => (a.nameEn || a.name).localeCompare(b.nameEn || b.name));
+
+            wardsData.forEach(ward => {
+                const option = document.createElement('option');
+                option.value = ward.id;
+                option.textContent = ward.nameEn || ward.name;
+                select.appendChild(option);
+            });
+
+            select.disabled = false;
+        }
+
+        function displayArea(data, type) {
+            if (currentLayer) {
+                map.removeLayer(currentLayer);  // Remove the previous layer
+            }
+
+            const infoDiv = document.getElementById('areaInfo');
+            const info = `
+                <h3>${data.nameEn || data.name}</h3>
+                <p><strong>Nepali Name:</strong> ${data.nameEn || 'Not available'}</p>
+                <p><strong>Population:</strong> ${data.population ? parseInt(data.population).toLocaleString() : 'Not available'}</p>
+                ${data.website ? `<p><strong>Website:</strong> <a href="${data.website}" target="_blank">${data.website}</a></p>` : ''}
+                ${data.wikidata ? `<p><strong>Wikidata:</strong> <a href="https://www.wikidata.org/wiki/${data.wikidata}" target="_blank">${data.wikidata}</a></p>` : ''}
+                ${type === 'municipality' ? `<p><strong>Type:</strong> ${data.type || 'Municipality'}</p>` : ''}
+            `;
+            infoDiv.innerHTML = info;
+
+            currentLayer = L.layerGroup().addTo(map);
+            data.geometry.forEach(way => {
+                way.forEach((node, idx) => {
+                    if (idx < way.length - 1) {
+                        const nextNode = way[idx + 1];
+                        L.polyline([node, nextNode], { color: '#ff7800', weight: 3 }).addTo(currentLayer);
+                    }
+                });
+            });
+
+            map.fitBounds([].concat(...data.geometry));
+        }
+
+        // Dropdown Event Listeners
+        document.getElementById('districtSelect').addEventListener('change', async (e) => {
+            const districtId = e.target.value;
+            if (districtId) {
+                const district = districtsData.find(d => d.id === parseInt(districtId));
+                displayArea(district, 'district');
+                await fetchMunicipalitiesData(districtId);
+            } else {
+                document.getElementById('municipalitySelect').disabled = true;
+                document.getElementById('municipalitySelect').innerHTML = '<option value="">Select a district...</option>';
+                document.getElementById('wardSelect').disabled = true;
+                document.getElementById('wardSelect').innerHTML = '<option value="">Select a municipality...</option>';
+                if (currentLayer) {
+                    map.removeLayer(currentLayer);
+                }
+            }
+        });
+
+        document.getElementById('municipalitySelect').addEventListener('change', async (e) => {
+            const municipalityId = e.target.value;
+            if (municipalityId) {
+                const municipality = municipalitiesData.find(m => m.id === parseInt(municipalityId));
+                displayArea(municipality, 'municipality');
+                await fetchWardsData(municipalityId);
+            } else {
+                const districtId = document.getElementById('districtSelect').value;
+                const district = districtsData.find(d => d.id === parseInt(districtId));
+                displayArea(district, 'district');
+                document.getElementById('wardSelect').disabled = true;
+                document.getElementById('wardSelect').innerHTML = '<option value="">Select a municipality...</option>';
+            }
+        });
+
+        document.getElementById('wardSelect').addEventListener('change', (e) => {
+            const wardId = e.target.value;
+            if (wardId) {
+                const ward = wardsData.find(w => w.id === parseInt(wardId));
+                displayArea(ward, 'ward');
+            } else {
+                const municipalityId = document.getElementById('municipalitySelect').value;
+                const municipality = municipalitiesData.find(m => m.id === parseInt(municipalityId));
+                displayArea(municipality, 'municipality');
+            }
+        });
+
+        // Initialize Map and Fetch Data
+        initMap();
+        fetchDistrictsData();
+        </script>
+    </body>
+</html>
