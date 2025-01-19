@@ -34,5 +34,5 @@ django-admin startproject TowerMap
 Here TowerMap is name of the `Django` project
 
 ## Initial Demo 
-![Map Demo](Assets/Map Selector.gif)
+![Map Demo](/Assets/Map Selector.gif)
 
